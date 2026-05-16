@@ -18,6 +18,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "https://*.pages.dev", 
+        "https://ai-search-contract-poc.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
