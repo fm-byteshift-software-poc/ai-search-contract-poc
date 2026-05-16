@@ -66,6 +66,35 @@ Open the frontend URL from the terminal and try:
 
 ---
 
+## Live Demo
+
+This PoC is publicly accessible for validation and stakeholder review:
+
+- **Frontend (Vercel):** https://ai-search-contract-poc.vercel.app/
+- **Backend API (Render):** https://ai-search-contract-poc-api.onrender.com
+- **API Documentation (Swagger):** https://ai-search-contract-poc-api.onrender.com/docs
+
+### Free Tier Notice
+
+Both deployments use free-tier infrastructure. Please note:
+
+1. **Cold starts**: If the backend has not received traffic in the last 15 minutes, Render may put the service to sleep. The first request can take 30–60 seconds to "wake up" the instance. This is expected behavior and does not indicate an error.
+
+2. **Frontend latency**: Vercel's free tier may also experience brief initialization delays on first load after periods of inactivity.
+
+3. **Rate limits**: Free tiers have request quotas. If you encounter `429 Too Many Requests`, wait a few minutes before retrying.
+
+### Testing Recommendations
+
+- Allow up to 60 seconds for the first search query to complete after a period of inactivity
+- Subsequent requests will respond normally (typically under 200ms)
+- If the frontend shows a network error, wait 30 seconds and retry once
+- For consistent demo performance, keep a browser tab open to the backend URL to prevent sleep
+
+> This deployment is for PoC validation only. Production deployments would use dedicated infrastructure with auto-scaling, caching, and SLA-backed uptime.
+
+---
+
 ## How the Search Actually Works (Mock Mode)
 
 ### The Pipeline (Deterministic, No LLM)
