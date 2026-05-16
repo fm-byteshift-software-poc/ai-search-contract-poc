@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route } from "react-router";
 import MainLayout from "@/layouts/MainLayout";
-import ItemsPage from "@/pages/items/ItemsPage";
+import SearchPage from "@/pages/SearchPage";
 import NotFoundPage from "@/pages/NotFoundPage";
 
 export default function App() {
@@ -8,7 +8,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<MainLayout />}>
-          <Route index element={<ItemsPage />} />
+          <Route index element={<SearchPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

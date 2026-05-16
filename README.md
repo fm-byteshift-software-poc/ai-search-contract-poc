@@ -1,143 +1,216 @@
 # AI Product Search Contract PoC
 
-## Overview
-
-A zero-cost, contract-first prototype for AI-powered e-commerce search. This PoC validates the **integration surface, response schema, and fallback behavior** before production implementation. It focuses on deterministic evaluation, explicit intent parsing, and clean hand-off architecture.
+> **Important Expectation Notice**  
+> This PoC demonstrates the **integration contract and deterministic pipeline** for AI-powered search. By default, it runs in **mock mode** (zero cost, fully reproducible) to validate schema, fallback behavior, and frontend/backend hand-off. **No real LLM calls are made** unless explicitly activated via configuration. This is intentional: we prove the architecture works before adding variable-cost AI.
 
 ---
 
-## Quick Start
+## What This PoC Proves
+
+| Validated                                              | Not Included (Yet)                        |
+| ------------------------------------------------------ | ----------------------------------------- |
+| Strict `SearchResponse` contract (backend to frontend) | Real OpenAI/Claude API calls              |
+| Deterministic intent parsing to filtering to ranking   | Production-scale catalog (10k+ SKUs)      |
+| Explicit fallback behavior and confidence bands        | Vector search, embeddings, or RAG         |
+| Frontend consumes contract with type safety            | Authentication, payments, admin dashboard |
+| Zero-cost local execution                              | Deployment, CI/CD, monitoring             |
+
+**In short:** This is a **specification executable**, not a production search engine. It proves _how_ AI search will integrate. The semantic intelligence layer is added after the contract is validated.
+
+---
+
+## Quick Start (Full Stack)
 
 ### Prerequisites
 
-- Python 3.10+
-- Virtual environment (recommended)
+- Python 3.10+ (backend)
+- Node.js 18+ (frontend)
+- Git
 
-### Setup & Run
+### 1. Backend (FastAPI)
 
 ```bash
 cd backend
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+# Windows:
+.venv\Scripts\activate
+# Mac/Linux:
+source .venv/bin/activate
+
 pip install -r requirements.txt
 uvicorn src.main:app --reload
 ```
 
-- **Swagger UI:** `http://localhost:8000/docs`
-- **Health Check:** `http://localhost:8000/health`
+Check the terminal output for the server URL (typically `http://localhost:8000`). Access the health endpoint to confirm the service is running.
+
+### 2. Frontend (Vite + React + TypeScript + DaisyUI)
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Check the terminal output for the dev server URL (typically `http://localhost:5173`). Open this URL in your browser to access the UI.
+
+### 3. Test End-to-End
+
+Open the frontend URL from the terminal and try:
+
+```
+"black running shoes under 100"  → high confidence, filtered results
+"wireless gaming mouse"          → electronics category mapped
+"algo legal pro escritório"      → fallback mode, explicit warning
+```
 
 ---
 
-## API Contract
+## How the Search Actually Works (Mock Mode)
+
+### The Pipeline (Deterministic, No LLM)
+
+```
+User Query
+   ↓
+[Mock Parser] ← Keyword mapping, regex extraction (no AI)
+   ↓
+ParsedIntent { constraints, confidence, notes }
+   ↓
+[Filter Engine] ← Python logic: category/price/attribute gates
+   ↓
+[Ranking] ← Weighted score: category(40%) + price(30%) + attributes(20%) + keyword(10%)
+   ↓
+[Contract Assembly] ← Pydantic validation → SearchResponse JSON
+   ↓
+Frontend renders results + match_signals badges
+```
+
+### Why Mock First?
+
+1. **Zero cost**: No API keys, no credits, no surprises
+2. **Reproducible**: Same query produces the same result, enabling reliable demos
+3. **Contract-focused**: Forces agreement on output shape before optimizing "intelligence"
+4. **Safe fallback testing**: We can trigger `confidence: low` on demand to validate UX
+
+### When You Activate Real LLM
+
+1. Set `LLM_PROVIDER=openai` in backend `.env`
+2. Add your API key
+3. Implement `_openai_parse()` in `src/utils/llm_adapter.py` (structured output)
+4. **Everything else stays identical**: service, contract, frontend, tests
+
+The LLM only replaces the `[Mock Parser]` component. The rest of the pipeline is production-ready.
+
+---
+
+## API Contract (Backend to Frontend)
 
 ### Endpoint
 
-`POST /api/search/`
+`POST /api/search`
 
-### Request Body
+### Request
 
 ```json
+{ "query": "black running shoes under 100" }
+```
+
+### Response (`SearchResponse`)
+
+```typescript
 {
-  "query": "black running shoes under 100"
+  query: string;
+  parsed_intent: {
+    original_query: string;
+    constraints: { category?, color?, price_min?, price_max?, ... };
+    confidence: "high" | "medium" | "low";
+    parsing_notes: string[];
+  };
+  results: Array<{
+    product: { id, name, price, category, color?, brand?, ... };
+    score: number; // 0.0–1.0
+    match_signals: { category_match, price_match, attribute_match, keyword_match };
+  }>;
+  total_matches: number;
+  fallback_applied: boolean;
+  fallback_reason: string | null;
+  processing_time_ms: number | null;
+  timestamp: string; // ISO 8601
 }
 ```
 
-### Response Schema
-
-The endpoint returns a strictly typed `SearchResponse` contract. `null` fields are explicitly included to guarantee schema stability for frontend integration.
-
-| Field                | Type             | Purpose                                                        |
-| -------------------- | ---------------- | -------------------------------------------------------------- |
-| `query`              | `string`         | Original user input                                            |
-| `parsed_intent`      | `object`         | Extracted constraints, confidence band, and parsing notes      |
-| `results`            | `array`          | Ranked products with explicit `match_signals` and `score`      |
-| `total_matches`      | `integer`        | Count of returned results                                      |
-| `fallback_applied`   | `boolean`        | `true` if low confidence or zero matches triggered degradation |
-| `fallback_reason`    | `string \| null` | Human-readable audit trail                                     |
-| `processing_time_ms` | `float`          | Execution time for observability                               |
-| `timestamp`          | `datetime`       | Response generation time                                       |
-
-> 💡 **Integration note:** Frontend should validate against `parsed_intent.confidence` and `fallback_applied` before rendering results. `match_signals` can be used to highlight why a product ranked.
+> **Frontend integration tip**: Use `parsed_intent.confidence` to show trust indicators, and `match_signals` to render badges explaining _why_ a product ranked.
 
 ---
 
-## Validation & Testing
+## Validation Checklist
 
-Run these queries in Swagger or via `curl` to verify contract behavior:
+Run these queries and verify:
 
-| Query                             | Expected Behavior                                                                     |
-| --------------------------------- | ------------------------------------------------------------------------------------- |
-| `"black running shoes under 100"` | `confidence: high`, explicit filters extracted, `fallback_applied: false`             |
-| `"wireless gaming mouse"`         | `confidence: high/medium`, category mapped, deterministic ranking                     |
-| `"something cool for the office"` | `confidence: low`, `fallback_applied: true`, `score: 0.1`, explicit `fallback_reason` |
+| Query                             | Expected Contract Behavior                                                                            |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `"black running shoes under 100"` | `confidence: "high"`, `price_max: 100`, `fallback_applied: false`, results less than or equal to $100 |
+| `"wireless gaming mouse"`         | `category: "electronics"`, 3+ electronics items, `score` weighted by match_signals                    |
+| `"algo legal pro escritório"`     | `confidence: "low"`, `fallback_applied: true`, alert banner visible, scores = 0.1                     |
 
-✅ **Contract is valid when:**
+**Contract is valid when**:
 
-- All three cases return the same JSON structure
-- `parsed_intent.constraints` reflect extracted filters (or `null`)
-- `fallback_applied` and `fallback_reason` are explicit, never silent
-- Zero runtime errors or missing fields
+- All responses follow the exact `SearchResponse` schema (no missing fields)
+- `null` values are explicit (not omitted)
+- `fallback_applied` never hides uncertainty
+- Frontend TypeScript compiles with zero `any` or `@ts-ignore`
 
 ---
 
-## Activating Real LLM Integration
+## Activating Real LLM (When Ready)
 
-This PoC runs in `mock` mode by default (zero cost, deterministic output). To activate OpenAI or Claude:
+1. **Backend config** (`backend/.env`):
 
-1. Copy configuration:
-   ```bash
-   cp .env.example .env
-   ```
-2. Edit `.env`:
    ```env
-   LLM_PROVIDER=openai  # or claude
+   LLM_PROVIDER=openai
    OPENAI_API_KEY=sk-proj-...
-   # ANTHROPIC_API_KEY=sk-ant-...
    ```
-3. Update `src/routes/search.py` dependency injection:
+
+2. **Update dependency injection** (`backend/src/routes/search.py`):
+
    ```python
-   # Replace hardcoded provider with env-driven config
    import os
-   def get_search_service() -> SearchService:
+   def get_search_service():
        catalog = CatalogRepository()
        llm = LLMAdapter(provider=os.getenv("LLM_PROVIDER", "mock"))
        return SearchService(llm_adapter=llm, catalog=catalog)
    ```
-4. Implement `_openai_parse()` or `_claude_parse()` in `src/utils/llm_adapter.py` using official SDKs. The `SearchService` contract requires **zero changes**.
 
-> ⚠️ **Note:** Real LLM calls require API credits. Mock mode is sufficient for contract validation and demo staging.
+3. **Implement adapter** (`backend/src/utils/llm_adapter.py`):
+   - Use OpenAI/Claude SDK with structured output (JSON mode / tool use)
+   - Return `ParsedIntent` matching the mock's schema exactly
 
----
+4. **Test**: Same queries, same contract — now with semantic understanding
 
-## Architecture & Design Principles
-
-| Principle                         | Implementation                                                                                                                            |
-| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **Contract-first**                | `SearchResponse` schema is defined before implementation. Frontend/backend agree on structure upfront.                                    |
-| **LLM as translator, not engine** | The model only extracts intent & constraints. Filtering, ranking, and fallback are deterministic Python logic.                            |
-| **Explicit degradation**          | `fallback_applied` + `fallback_reason` replace silent failures. Confidence bands guide frontend UX.                                       |
-| **Mock by default**               | Zero-cost, reproducible outputs. Real LLM activation is a config toggle, not a rewrite.                                                   |
-| **Integration-ready**             | Modular adapters, strict Pydantic validation, and observability fields (`processing_time_ms`, `timestamp`) survive production transplant. |
+> **Cost note**: Real LLM calls incur per-request charges. Mock mode is free and sufficient for contract validation, stakeholder demos, and frontend integration testing.
 
 ---
 
-## Production Migration Path
+## Architecture Snapshot
 
-When the MVP moves beyond prototype:
+```
+frontend/                          backend/
+├─ src/                            ├─ src/
+│  ├─ types/search.ts  ← Contract │  ├─ models/product.py  ← Contract
+│  ├─ services/searchService.ts   │  ├─ utils/llm_adapter.py  ← Mock/Real switch
+│  ├─ components/                 │  ├─ repositories/catalog_repository.py
+│  │  ├─ SearchInput.tsx          │  ├─ services/search_service.py  ← Pipeline
+│  │  ├─ SearchResults.tsx        │  ├─ routes/search.py  ← POST /api/search
+│  │  └─ ...                      │  └─ main.py  ← CORS, app factory
+│  └─ pages/SearchPage.tsx        └─ requirements.txt
+├─ .env.example                    └─ .env.example
+└─ vite.config.ts
+```
 
-1. Replace `CatalogRepository` with SQL/NoSQL or search engine (Elastic/Meilisearch/Algolia)
-2. Activate real LLM adapter + add rate limiting & token tracking
-3. Add caching for identical queries & fallback responses
-4. Instrument with structured logging, error tracing, and SLA alerts
-5. Frontend integration: consume `/api/search/`, render `match_signals` as badges, handle `confidence: low` with placeholder UX
+**Key principle**: The contract (`SearchResponse` / `search.ts`) is the single source of truth. Change the parser (mock to LLM) or the data layer (mock list to SQL) without touching the rest.
 
----
-
-## License & Notes
-
-- PoC artifact for contract validation only. Not production-optimized.
-- Mock data intentionally covers edge cases (price boundaries, missing attributes, stock states, vague intent).
-- Designed for clean hand-off: swap data layer + activate LLM → production-ready search surface.
+> **PoC Scope Reminder**: This artifact is for contract validation and stakeholder alignment only. It is not optimized for production scale, security hardening, or cost-efficient LLM usage. Those concerns are addressed in the post-MVP phase, using this PoC as the integration blueprint.
 
 ---
 
